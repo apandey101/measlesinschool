@@ -174,17 +174,20 @@ List cpp_apply_quarantine(
     CharacterVector state,
     LogicalVector is_quarantined,
     LogicalVector is_vaccinated,        // unchanged
+    LogicalVector contacts_traced,      // track which symptomatic sources were already traced
     double quarantine_efficacy
 ) {
   int n = student_id.size();
   IntegerVector quarantine_ids;
   CharacterVector quarantine_states;
 
-  // Find symptomatic students (trigger tracing)
+  IntegerVector traced_symptom_ids;
+
+  // Find symptomatic students (trigger tracing) but only those not yet traced
   std::vector<int> symptomatic_idx;
   for (int i = 0; i < n; i++) {
     String s = state[i];
-    if (s == "P" || s == "Ra" || s == "Iso") {
+    if ((s == "P" || s == "Ra" || s == "Iso") && !contacts_traced[i]) {
       symptomatic_idx.push_back(i);
     }
   }
@@ -198,9 +201,14 @@ List cpp_apply_quarantine(
 
   // For each symptomatic student, quarantine UNVACCINATED classmates (existing logic)
   // and also quarantine UNVACCINATED same-school non-classmates (between-class contacts)
+  // After processing each symptomatic student, record them as traced (so we do not
+  // re-trace the same symptomatic source on subsequent days).
   for (size_t i = 0; i < symptomatic_idx.size(); i++) {
     int symp_idx   = symptomatic_idx[i];
     int symp_class = class_id[symp_idx];
+
+    // record this symptomatic student's id to mark as traced by the caller
+    traced_symptom_ids.push_back(student_id[symp_idx]);
 
     for (int j = 0; j < n; j++) {
       if (j == symp_idx) continue;
@@ -238,7 +246,8 @@ List cpp_apply_quarantine(
 
   return List::create(
     Named("quarantine_ids")   = quarantine_ids,
-    Named("quarantine_states")= quarantine_states
+    Named("quarantine_states")= quarantine_states,
+    Named("traced_symptom_ids") = traced_symptom_ids
   );
 }
 
@@ -292,6 +301,7 @@ apply_quarantine <- function(population, params) {
     state            = population$state,
     is_quarantined   = population$is_quarantined,
     is_vaccinated    = population$is_vaccinated,   # <-- NEW
+    contacts_traced  = population$contacts_traced,
     quarantine_efficacy = params$quarantine_efficacy
   )
   
@@ -304,6 +314,13 @@ apply_quarantine <- function(population, params) {
         population$time_in_state[idx] <- 0
       }
     }
+  }
+
+  # Mark symptomatic students whose contacts were traced so we don't re-trace them
+  if (!is.null(result$traced_symptom_ids) && length(result$traced_symptom_ids) > 0) {
+    traced_idx <- match(unique(result$traced_symptom_ids), population$student_id)
+    traced_idx <- traced_idx[!is.na(traced_idx)]
+    if (length(traced_idx) > 0) population$contacts_traced[traced_idx] <- TRUE
   }
   
   return(population)
@@ -330,6 +347,7 @@ create_school_population <- function(school_size, avg_class_size, age_range) {
   population$is_isolated <- FALSE
   population$is_quarantined <- FALSE
   population$is_index <- FALSE              # <-- NEW
+  population$contacts_traced <- FALSE       # <-- NEW: track whether symptomatic sources were traced
   
   return(population)
 }
