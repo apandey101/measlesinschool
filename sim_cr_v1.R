@@ -196,20 +196,30 @@ List cpp_apply_quarantine(
     );
   }
 
-  // For each symptomatic student, quarantine ONLY UNVACCINATED classmates
+  // For each symptomatic student, quarantine UNVACCINATED classmates (existing logic)
+  // and also quarantine UNVACCINATED same-school non-classmates (between-class contacts)
   for (size_t i = 0; i < symptomatic_idx.size(); i++) {
     int symp_idx   = symptomatic_idx[i];
     int symp_class = class_id[symp_idx];
 
     for (int j = 0; j < n; j++) {
       if (j == symp_idx) continue;
-      if (class_id[j] != symp_class) continue;
       if (is_quarantined[j]) continue;
 
       // Skip vaccinated contacts entirely
       if (is_vaccinated[j]) continue;
 
-      // Apply quarantine with probability (coverage of exclusions)
+      // Determine whether this contact is a classmate or a same-school non-classmate
+      bool is_classmate = (class_id[j] == symp_class);
+      bool is_same_school_non_classmate = (class_id[j] != symp_class);
+
+      if (!is_classmate && !is_same_school_non_classmate) {
+        // In current single-school setup this shouldn't happen, but keep safe check
+        continue;
+      }
+
+      // Apply quarantine with the same probability for both classmates and
+      // same-school non-classmates (unvaccinated only).
       if (R::runif(0, 1) < quarantine_efficacy) {
         String current_state = state[j];
         if (current_state == "S") {
