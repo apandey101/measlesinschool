@@ -187,7 +187,8 @@ List cpp_apply_quarantine(
   std::vector<int> symptomatic_idx;
   for (int i = 0; i < n; i++) {
     String s = state[i];
-    if ((s == "P" || s == "Ra" || s == "Iso") && !contacts_traced[i]) {
+    // Only trigger tracing when the case is isolated (Iso) and not yet traced
+    if ((s == "Iso") && !contacts_traced[i]) {
       symptomatic_idx.push_back(i);
     }
   }
@@ -207,7 +208,7 @@ List cpp_apply_quarantine(
     int symp_idx   = symptomatic_idx[i];
     int symp_class = class_id[symp_idx];
 
-    // record this symptomatic student's id to mark as traced by the caller
+    // record this symptomatic student id to mark as traced by the caller
     traced_symptom_ids.push_back(student_id[symp_idx]);
 
     for (int j = 0; j < n; j++) {
@@ -507,11 +508,18 @@ run_single_simulation <- function(school_size, avg_class_size, age_range,
   
   for (day in 1:n_days) {
     if (!outbreak_ended) {
+      # Transmission happens using the current day's present students
+      population <- school_transmission(population, params)
+
+      # Progress disease states (E->P, P->Ra, isolate cases, release from quarantine, etc.)
+      population <- update_disease_states(population, params)
+
+      # Apply quarantine after states are updated so tracing is triggered when
+      # cases have reached the isolated state (`Iso`). This ensures quarantine
+      # is triggered at the time of isolation rather than during prodromal phase.
       if (params$quarantine_contacts) {
         population <- apply_quarantine(population, params)
       }
-      population <- school_transmission(population, params)
-      population <- update_disease_states(population, params)
     }
     
     daily_counts[day, ] <- table(factor(population$state, levels = state_cols))
