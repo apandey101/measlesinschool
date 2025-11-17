@@ -214,7 +214,7 @@ List cpp_apply_quarantine(
       bool is_same_school_non_classmate = (class_id[j] != symp_class);
 
       if (!is_classmate && !is_same_school_non_classmate) {
-        // In current single-school setup this shouldn't happen, but keep safe check
+        // In current single-school setup this should not happen, but keep safe check
         continue;
       }
 
