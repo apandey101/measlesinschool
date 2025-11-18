@@ -237,11 +237,11 @@ ui <- fluidPage(
                style = "margin-top: 0; color: #1976d2;"),
             
             # Transmission Parameters (replace the old beta sliders)
-            sliderInput("c_within",  "Within-class contacts per day:",  min = 0, max = 20, value = 10, step = 1),
-            sliderInput("c_between", "Between-class contacts per day:", min = 0, max = 10, value = 5,  step = 1),
+            sliderInput("c_within",  "Within-class contacts per day:",  min = 0, max = 30, value = 25, step = 1),
+            sliderInput("c_between", "Between-class contacts per day:", min = 0, max = 20, value = 10,  step = 1),
             
-            sliderInput("p_within",  "Per-contact transmission (within):",  min = 0, max = 1, value = 0.19, step = 0.01),
-            sliderInput("p_between", "Per-contact transmission (between):", min = 0, max = 1, value = 0.09, step = 0.01),
+            sliderInput("p_within",  "Per-contact transmission (within):",  min = 0, max = 1, value = 0.39, step = 0.01),
+            sliderInput("p_between", "Per-contact transmission (between):", min = 0, max = 1, value = 0.039, step = 0.01),
             
             tags$small(
               style = "color:#666;",
@@ -738,7 +738,7 @@ server <- function(input, output, session) {
       prodromal_period = 4,
       rash_period = 4,
       isolation_delay = input$isolation_delay,
-      isolation_period = 3,
+      isolation_period = 8,
       vaccine_efficacy = 0.97,
       vaccine_infectiousness_reduction = 0.80,
       prodromal_infectiousness_multiplier = 1.0,
