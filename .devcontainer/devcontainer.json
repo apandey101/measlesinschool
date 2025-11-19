@@ -1,0 +1,22 @@
+{
+    "name": "R Dev Container",
+    // Tell Codespaces/Dev Containers to build using the Dockerfile in this folder
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
+
+  // Optional: Automatically install helpful VS Code extensions
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "REditorSupport.r"      // R language support
+      ]
+    }
+  },
+
+  // You can run commands after the container is created (optional, we don't need it now)
+  "postCreateCommand": "",
+
+  // Use the default user (vscode) defined in the base image
+  "remoteUser": "vscode"
+}
