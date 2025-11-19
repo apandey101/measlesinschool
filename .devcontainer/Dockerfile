@@ -9,7 +9,7 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 # Install R packages you'll use
-RUN R -e 'install.packages(c("dplyr", "Rcpp", "tidyr","ggplot2","plotly","shiny","tidyr","shinycssloaders","readxl","shinyBS"), repos = "https://cloud.r-project.org")'
+RUN R -e 'install.packages(c("dplyr", "Rcpp", "tidyr","ggplot2","plotly","shiny","tidyr","shinycssloaders","readxl","shinyBS","languageserver"), repos = "https://cloud.r-project.org")'
 
 # Set default user (this matches what devcontainer.json expects)
 USER vscode
