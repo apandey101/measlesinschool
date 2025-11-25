@@ -519,7 +519,7 @@ ui <- fluidPage(
           
           p("The model runs in daily time steps. When a student becomes infected they progress through a latent (incubation) phase before entering the prodromal (pre-rash infectious) phase and then develop a rash. For the first (index) case, once a rash appears the individual is isolated after a user-specified delay, preventing further school-based transmission. For all subsequent cases, isolation is triggered after the onset of the prodromal phase with user-defined delay."),
           
-          p("Quarantine is applied only to unvaccinated classmates identified as exposed to a symptomatic case. Vaccinated classmates are not quarantined in this scenario. Quarantined students are removed from school mixing for the defined quarantine period, then return to their prior immune or susceptible status."),
+          p("Quarantine is applied only to unvaccinated contacts identified as exposed to a symptomatic case. Vaccinated contacts are not quarantined in this scenario. Quarantined students are removed from school mixing for the defined quarantine period, then return to their prior immune or susceptible status."),
           
           p(
             strong("Important:"),
@@ -530,7 +530,7 @@ ui <- fluidPage(
           tags$ul(
             tags$li(strong("Two levels of contact:"), "Higher exposure risk within classrooms; lower between-class mixing."),
             tags$li(strong("Vaccination effects:"), "Vaccinated students are less susceptible and, if infected, less infectious to others."),
-            tags$li(strong("Targeted interventions:"), "Index case isolation after rash + delay, isolation of subsequent symptomatic students (prodormal onset + delay), and quarantine of unvaccinated exposed classmates only."),
+            tags$li(strong("Targeted interventions:"), "Index case isolation after rash + delay, isolation of subsequent symptomatic students (prodormal onset + delay), and quarantine of unvaccinated exposed contacts only."),
             tags$li(strong("Stochastic simulation:"), "Each simulation run represents a possible outbreak trajectory, enabling exploration of uncertainty in outcomes.")
           ),
           
@@ -553,7 +553,7 @@ ui <- fluidPage(
           
           br(),
           hr(),
-          p("Model Version 1.0 | Created 2025 | Updated on 11/11/2025", style = "text-align: center; color: gray;")
+          p("Model Version 1.1 | Created 2025 | Updated on 11/25/2025", style = "text-align: center; color: gray;")
         )
       ) # end tabsetPanel
     )  # end mainPanel
