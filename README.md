@@ -7,7 +7,7 @@ This repository contains an agent-based model (ABM) simulating measles transmiss
 The school data on number of students and vaccination rates are taken from South Carolina Department of Public Health and represent the percentage of total students who have completed vaccine schedules for all required vaccines, including MMR (measles, mumps, rubella).
 
 Implemented in R with core transmission loops optimized in C++ (via Rcpp), the simulation focuses on the interplay between classroom structure, vaccination gaps, and intervention delays.
-
+The Shiny App for this model can be accessed at: https://apandey.shinyapps.io/measlesinsc/.
 ## Key Features
 
 - **Hybrid Architecture**: Uses R for data management and UI, with Rcpp for high-speed stochastic transmission and quarantine loops (sim_cr_v1.R).
