@@ -5,7 +5,7 @@
 # Interactive web application for exploring measles transmission dynamics
 # in school settings with class-based mixing
 #
-# Updated on 11/10/2025
+# Updated on 11/25/2025
 # ==============================================================================
 
 library(shiny)
@@ -22,7 +22,7 @@ source("sim_cr_v1.R")
 # LOAD SCHOOL DATA
 # ==============================================================================
 # Load your school vaccination data
-school_data_raw <- read_xlsx("SC_vaccination_2024_2025.xlsx")
+school_data_raw <- read_xlsx("SC_vaccination_2025_2026.xlsx")
 # FILTER OUT SCHOOLS WITH MISSING DATA
 school_data <- school_data_raw %>%
   filter(
@@ -553,7 +553,8 @@ ui <- fluidPage(
           
           br(),
           hr(),
-          p("Model Version 1.1 | Created 2025 | Updated on 11/25/2025", style = "text-align: center; color: gray;")
+          p("Model Version 1.1 | Created 2025 | Updated on 11/25/2025", style = "text-align: center; color: gray;"),
+          p("For more information about the code and model details, please visit the github page: https://github.com/apandey101/measlesinschool.")
         )
       ) # end tabsetPanel
     )  # end mainPanel
