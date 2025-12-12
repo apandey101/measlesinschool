@@ -1,10 +1,16 @@
 # ==============================================================================
 # MEASLES TRANSMISSION MODEL WITH IMPROVED QUARANTINE (Contact History)
 # ==============================================================================
-# Updated: Contact-history-based quarantine
-# Key improvement: Tracks contacts during isolation delay period and quarantines
-# them when the infector is isolated (retroactive contact tracing)
+# Updated:
 #
+# Added no_intervention option for baseline scenario simulation
+# Fixed: Corrected P->Ra time_in_state reset for no_intervention scenario
+# Update: Separate isolation delays for index case (after rash) and 
+#              secondary cases (after prodromal onset)
+# Fixed: Quarantine efficacy now applied per unique contact person (not per
+#           contact event), preventing inflated effective quarantine rates
+# Fixed: Iso -> R transition now based on remaining infectious period,
+#           not a fixed additional period. Added time_since_prodromal tracking.
 # ==============================================================================
 
 library(Rcpp)
@@ -18,6 +24,7 @@ library(tidyr)
 
 sourceCpp(code = '
 #include <Rcpp.h>
+#include <set>
 using namespace Rcpp;
 
 // -----------------------------
@@ -177,6 +184,7 @@ List cpp_school_transmission_contacts(
 
 // -----------------------------
 // IMPROVED QUARANTINE: Uses contact history
+// FIX V2.3: Apply efficacy per UNIQUE contact, not per contact event
 // -----------------------------
 
 // [[Rcpp::export]]
@@ -185,7 +193,7 @@ List cpp_apply_quarantine_with_history(
     CharacterVector state,
     LogicalVector is_quarantined,
     LogicalVector is_vaccinated,
-    LogicalVector newly_isolated,        // NEW: which students just became isolated
+    LogicalVector newly_isolated,        // which students just became isolated
     IntegerVector contact_history_infector,  // historical contacts: infector IDs
     IntegerVector contact_history_target,    // historical contacts: target IDs
     double quarantine_efficacy
@@ -209,44 +217,53 @@ List cpp_apply_quarantine_with_history(
     );
   }
   
-  // For each newly isolated student, find their historical contacts
+  // For each newly isolated student, find their UNIQUE historical contacts
   for (size_t i = 0; i < isolated_idx.size(); i++) {
     int iso_idx = isolated_idx[i];
     int iso_id  = student_id[iso_idx];
     
-    // Find all contacts where this person was the infector
+    // FIXED: Use a set to collect UNIQUE contact IDs first
+    std::set<int> unique_contact_ids;
+    
+    // Find all unique contacts where this person was the infector
     for (int c = 0; c < contact_history_infector.size(); c++) {
       if (contact_history_infector[c] == iso_id) {
-        int contact_id = contact_history_target[c];
-        
-        // Find this contact in the population
-        int contact_idx = -1;
-        for (int j = 0; j < n; j++) {
-          if (student_id[j] == contact_id) {
-            contact_idx = j;
-            break;
-          }
+        unique_contact_ids.insert(contact_history_target[c]);
+      }
+    }
+    
+    // Now apply quarantine efficacy ONCE per unique contact
+    for (std::set<int>::iterator it = unique_contact_ids.begin(); 
+         it != unique_contact_ids.end(); ++it) {
+      int contact_id = *it;
+      
+      // Find this contact in the population
+      int contact_idx = -1;
+      for (int j = 0; j < n; j++) {
+        if (student_id[j] == contact_id) {
+          contact_idx = j;
+          break;
         }
-        
-        if (contact_idx == -1) continue;
-        if (is_quarantined[contact_idx]) continue;
-        
-        // Skip vaccinated contacts
-        if (is_vaccinated[contact_idx]) continue;
-        
-        // Apply quarantine with efficacy
-        if (R::runif(0, 1) < quarantine_efficacy) {
-          String current_state = state[contact_idx];
-          if (current_state == "S") {
-            quarantine_ids.push_back(contact_id);
-            quarantine_states.push_back("QS");
-          } else if (current_state == "E") {
-            quarantine_ids.push_back(contact_id);
-            quarantine_states.push_back("QE");
-          } else if (current_state == "P") {
-            quarantine_ids.push_back(contact_id);
-            quarantine_states.push_back("QP");
-          }
+      }
+      
+      if (contact_idx == -1) continue;
+      if (is_quarantined[contact_idx]) continue;
+      
+      // Skip vaccinated contacts
+      if (is_vaccinated[contact_idx]) continue;
+      
+      // Apply quarantine with efficacy - ONCE per unique contact
+      if (R::runif(0, 1) < quarantine_efficacy) {
+        String current_state = state[contact_idx];
+        if (current_state == "S") {
+          quarantine_ids.push_back(contact_id);
+          quarantine_states.push_back("QS");
+        } else if (current_state == "E") {
+          quarantine_ids.push_back(contact_id);
+          quarantine_states.push_back("QE");
+        } else if (current_state == "P") {
+          quarantine_ids.push_back(contact_id);
+          quarantine_states.push_back("QP");
         }
       }
     }
@@ -288,6 +305,7 @@ school_transmission <- function(population, params, contact_history) {
     exposure_idx <- match(unique(result$new_exposures), population$student_id)
     population$state[exposure_idx] <- "E"
     population$time_in_state[exposure_idx] <- 0
+    population$time_since_prodromal[exposure_idx] <- NA  # Reset for new exposures
   }
   if (length(result$breakthrough_cases) > 0) {
     breakthrough_idx <- match(unique(result$breakthrough_cases), population$student_id)
@@ -340,6 +358,7 @@ apply_quarantine <- function(population, params, contact_history) {
         population$state[idx] <- result$quarantine_states[i]
         population$is_quarantined[idx] <- TRUE
         population$time_in_state[idx] <- 0
+        # Note: time_since_prodromal continues to track infectious period in QP
       }
     }
   }
@@ -415,12 +434,13 @@ create_school_population <- function(school_size, avg_class_size, age_range) {
   
   population$state <- "S"
   population$time_in_state <- 0
+  population$time_since_prodromal <- NA  # NEW: tracks time since entering P (for Iso -> R)
   population$is_vaccinated <- FALSE
   population$breakthrough_infection <- FALSE
   population$is_isolated <- FALSE
   population$is_quarantined <- FALSE
   population$is_index <- FALSE
-  population$newly_isolated <- FALSE  # NEW: track who just became isolated
+  population$newly_isolated <- FALSE
   
   return(population)
 }
@@ -442,6 +462,7 @@ initialize_vaccination <- function(population, vaccination_coverage, initial_inf
     index_id <- infected_ids[1]
     population$state[index_id] <- "P"
     population$time_in_state[index_id] <- 0
+    population$time_since_prodromal[index_id] <- 0  # Index case starts in P
     population$is_index[index_id] <- TRUE
     
     if (length(infected_ids) > 1) {
@@ -461,12 +482,16 @@ update_disease_states <- function(population, params) {
   # Reset newly_isolated flag at the start of each update
   population$newly_isolated <- FALSE
   
+  # Total infectious period (for Iso -> R calculation)
+  total_infectious_period <- params$prodromal_period + params$rash_period
+  
   ## E -> P
   exposed_ready <- which(population$state == "E" &
                            population$time_in_state >= params$latent_period)
   if (length(exposed_ready) > 0) {
     population$state[exposed_ready] <- "P"
     population$time_in_state[exposed_ready] <- 0
+    population$time_since_prodromal[exposed_ready] <- 0  # Start tracking infectious time
   }
   
   ## QE -> QP
@@ -475,6 +500,7 @@ update_disease_states <- function(population, params) {
   if (length(qe_ready) > 0) {
     population$state[qe_ready] <- "QP"
     population$time_in_state[qe_ready] <- 0
+    population$time_since_prodromal[qe_ready] <- 0  # Start tracking infectious time
   }
   
   ## P -> Ra
@@ -484,57 +510,110 @@ update_disease_states <- function(population, params) {
     p_idx_index    <- p_ready[ population$is_index[p_ready] ]
     p_idx_nonindex <- p_ready[ !population$is_index[p_ready] ]
     
+    # Index case: reset time_in_state (delay measured from rash onset)
+    # But keep time_since_prodromal incrementing
     if (length(p_idx_index) > 0) {
       population$state[p_idx_index] <- "Ra"
       population$time_in_state[p_idx_index] <- 0
+      # time_since_prodromal continues (already at 4)
     }
     
+    # Non-index cases: behavior depends on intervention scenario
     if (length(p_idx_nonindex) > 0) {
       population$state[p_idx_nonindex] <- "Ra"
+      
+      # For no_intervention scenario, reset time_in_state so Ra lasts full rash_period
+      # For intervention scenario, keep time_in_state for isolation_delay_secondary calculation
+      if (params$no_intervention) {
+        population$time_in_state[p_idx_nonindex] <- 0
+      }
+      # time_since_prodromal continues in both cases
     }
   }
   
-  ## Isolation rules
-  # 1) INDEX: isolate AFTER rash + isolation_delay
-  rash_index_ready <- which(population$state == "Ra" &
-                              population$is_index &
-                              population$time_in_state >= params$isolation_delay)
-  if (length(rash_index_ready) > 0) {
-    population$state[rash_index_ready] <- "Iso"
-    population$is_isolated[rash_index_ready] <- TRUE
-    population$newly_isolated[rash_index_ready] <- TRUE  # FLAG
-    population$time_in_state[rash_index_ready] <- 0
+  # ==========================================================================
+  # NO INTERVENTION SCENARIO: Direct Ra -> R after natural rash period
+  # ==========================================================================
+  if (params$no_intervention) {
+    # Natural recovery: Ra -> R after rash_period days (no isolation)
+    ra_natural_recovery <- which(population$state == "Ra" &
+                                   population$time_in_state >= params$rash_period)
+    if (length(ra_natural_recovery) > 0) {
+      population$state[ra_natural_recovery] <- "R"
+      population$time_in_state[ra_natural_recovery] <- 0
+      population$time_since_prodromal[ra_natural_recovery] <- NA
+    }
+    
+    # QP also recovers naturally after full infectious period
+    qp_natural_recovery <- which(population$state == "QP" &
+                                   !is.na(population$time_since_prodromal) &
+                                   population$time_since_prodromal >= total_infectious_period)
+    if (length(qp_natural_recovery) > 0) {
+      population$state[qp_natural_recovery] <- "R"
+      population$is_quarantined[qp_natural_recovery] <- FALSE
+      population$time_in_state[qp_natural_recovery] <- 0
+      population$time_since_prodromal[qp_natural_recovery] <- NA
+    }
+    
+  } else {
+    # ==========================================================================
+    # STANDARD INTERVENTION SCENARIO: Isolation rules with separate delays
+    # ==========================================================================
+    
+    ## Isolation rules
+    # 1) INDEX CASE: isolate after rash onset + isolation_delay_index
+    #    time_in_state was reset to 0 when entering Ra, so this measures time since rash
+    rash_index_ready <- which(population$state == "Ra" &
+                                population$is_index &
+                                population$time_in_state >= params$isolation_delay_index)
+    if (length(rash_index_ready) > 0) {
+      population$state[rash_index_ready] <- "Iso"
+      population$is_isolated[rash_index_ready] <- TRUE
+      population$newly_isolated[rash_index_ready] <- TRUE
+      population$time_in_state[rash_index_ready] <- 0
+      # time_since_prodromal continues for tracking when to recover
+    }
+    
+    # 2) SECONDARY CASES (NON-INDEX): isolate when time since prodromal onset >= isolation_delay_secondary
+    #    Note: For non-index, time_in_state was NOT reset at P->Ra transition
+    #    So time_in_state represents total time since prodromal onset
+    nonindex_delay_ready <- which(!population$is_index &
+                                    (population$state == "P" | population$state == "Ra") &
+                                    population$time_in_state >= params$isolation_delay_secondary)
+    if (length(nonindex_delay_ready) > 0) {
+      population$state[nonindex_delay_ready] <- "Iso"
+      population$is_isolated[nonindex_delay_ready] <- TRUE
+      population$newly_isolated[nonindex_delay_ready] <- TRUE
+      population$time_in_state[nonindex_delay_ready] <- 0
+      # time_since_prodromal continues for tracking when to recover
+    }
+    
+    # 3) QP: isolate after the secondary case delay (measured from prodromal onset)
+    qp_delay_ready <- which(population$state == "QP" &
+                              !is.na(population$time_since_prodromal) &
+                              population$time_since_prodromal >= params$isolation_delay_secondary)
+    if (length(qp_delay_ready) > 0) {
+      population$state[qp_delay_ready] <- "Iso"
+      population$is_isolated[qp_delay_ready] <- TRUE
+      population$is_quarantined[qp_delay_ready] <- FALSE  # No longer quarantined, now isolated
+      population$newly_isolated[qp_delay_ready] <- TRUE
+      population$time_in_state[qp_delay_ready] <- 0
+      # time_since_prodromal continues
+    }
   }
   
-  # 2) NON-INDEX: isolate when time since P onset >= isolation_delay
-  nonindex_delay_ready <- which(!population$is_index &
-                                  (population$state == "P" | population$state == "Ra") &
-                                  population$time_in_state >= params$isolation_delay)
-  if (length(nonindex_delay_ready) > 0) {
-    population$state[nonindex_delay_ready] <- "Iso"
-    population$is_isolated[nonindex_delay_ready] <- TRUE
-    population$newly_isolated[nonindex_delay_ready] <- TRUE  # FLAG
-    population$time_in_state[nonindex_delay_ready] <- 0
-  }
-  
-  # 3) QP: isolate after the same delay
-  qp_delay_ready <- which(population$state == "QP" &
-                            population$time_in_state >= params$isolation_delay)
-  if (length(qp_delay_ready) > 0) {
-    population$state[qp_delay_ready] <- "Iso"
-    population$is_isolated[qp_delay_ready] <- TRUE
-    population$newly_isolated[qp_delay_ready] <- TRUE  # FLAG
-    population$time_in_state[qp_delay_ready] <- 0
-  }
-  
-  ## Iso -> R
-  iso_duration <- (params$rash_period - params$isolation_delay) + params$isolation_period
-  isolated_ready <- which(population$state == "Iso" &
-                            population$time_in_state >= iso_duration)
-  if (length(isolated_ready) > 0) {
-    population$state[isolated_ready] <- "R"
-    population$is_isolated[isolated_ready] <- FALSE
-    population$time_in_state[isolated_ready] <- 0
+  ## Iso -> R: Based on TOTAL infectious period, not a fixed isolation duration
+  ## Recovery happens when time_since_prodromal >= total infectious period
+  if (!params$no_intervention) {
+    isolated_ready <- which(population$state == "Iso" &
+                              !is.na(population$time_since_prodromal) &
+                              population$time_since_prodromal >= total_infectious_period)
+    if (length(isolated_ready) > 0) {
+      population$state[isolated_ready] <- "R"
+      population$is_isolated[isolated_ready] <- FALSE
+      population$time_in_state[isolated_ready] <- 0
+      population$time_since_prodromal[isolated_ready] <- NA
+    }
   }
   
   ## QS release
@@ -557,6 +636,16 @@ update_disease_states <- function(population, params) {
   
   ## Increment time in state
   population$time_in_state <- population$time_in_state + 1
+  
+  ## Increment time_since_prodromal for those in infectious/isolated states
+  infectious_states <- c("P", "Ra", "Iso", "QP")
+  in_infectious <- which(population$state %in% infectious_states & 
+                           !is.na(population$time_since_prodromal))
+  if (length(in_infectious) > 0) {
+    population$time_since_prodromal[in_infectious] <- 
+      population$time_since_prodromal[in_infectious] + 1
+  }
+  
   population
 }
 
@@ -570,7 +659,10 @@ run_single_simulation <- function(school_size, avg_class_size, age_range,
   population <- initialize_vaccination(population, vaccination_coverage, initial_infected)
   
   # Initialize contact history tracker
-  contact_history <- ContactHistory$new(window_size = params$isolation_delay)
+  # Window size should cover the longest delay for contact tracing purposes
+  contact_window <- max(params$isolation_delay_index + params$prodromal_period, 
+                        params$isolation_delay_secondary)
+  contact_history <- ContactHistory$new(window_size = contact_window)
   
   state_cols <- c("S", "E", "P", "Ra", "Iso", "R", "V", "QS", "QE", "QP")
   daily_counts <- matrix(0, nrow = n_days, ncol = length(state_cols))
@@ -589,8 +681,8 @@ run_single_simulation <- function(school_size, avg_class_size, age_range,
       # Progress disease states (marks newly_isolated flag)
       population <- update_disease_states(population, params)
       
-      # Apply quarantine using historical contacts
-      if (params$quarantine_contacts) {
+      # Apply quarantine using historical contacts (skipped if no_intervention)
+      if (params$quarantine_contacts && !params$no_intervention) {
         population <- apply_quarantine(population, params, contact_history)
       }
     }
@@ -629,7 +721,8 @@ run_single_simulation <- function(school_size, avg_class_size, age_range,
 run_multiple_simulations <- function(n_simulations, school_size, avg_class_size,
                                      age_range, vaccination_coverage,
                                      latent_period, prodromal_period, rash_period,
-                                     isolation_delay, isolation_period,
+                                     isolation_delay_index, isolation_delay_secondary,
+                                     isolation_period,
                                      vaccine_efficacy, vaccine_infectiousness_reduction,
                                      prodromal_infectiousness_multiplier,
                                      rash_infectiousness_multiplier,
@@ -637,14 +730,16 @@ run_multiple_simulations <- function(n_simulations, school_size, avg_class_size,
                                      p_within, p_between,
                                      quarantine_contacts, quarantine_efficacy,
                                      quarantine_duration, initial_infected,
-                                     n_days, seed_start, verbose) {
+                                     n_days, seed_start, verbose,
+                                     no_intervention = FALSE) {
   
   params <- list(
     latent_period = latent_period,
     prodromal_period = prodromal_period,
     rash_period = rash_period,
-    isolation_delay = isolation_delay,
-    isolation_period = isolation_period,
+    isolation_delay_index = isolation_delay_index,
+    isolation_delay_secondary = isolation_delay_secondary,
+    isolation_period = isolation_period,  # Kept for compatibility, but not used for Iso->R
     
     vaccine_efficacy = vaccine_efficacy,
     vaccine_infectiousness_reduction = vaccine_infectiousness_reduction,
@@ -658,15 +753,27 @@ run_multiple_simulations <- function(n_simulations, school_size, avg_class_size,
     
     quarantine_contacts   = quarantine_contacts,
     quarantine_efficacy   = quarantine_efficacy,
-    quarantine_duration   = quarantine_duration
+    quarantine_duration   = quarantine_duration,
+    
+    no_intervention = no_intervention
   )
   
   if (verbose) {
-    cat("=== MEASLES SIMULATION WITH CONTACT-HISTORY QUARANTINE ===\n")
+    cat("=== MEASLES SIMULATION ===\n")
+    if (no_intervention) {
+      cat("*** NO INTERVENTION SCENARIO (Baseline) ***\n")
+    } else {
+      cat("*** WITH INTERVENTION SCENARIO ***\n")
+    }
     cat(sprintf("Number of simulations: %d\n", n_simulations))
     cat(sprintf("School size: %d students\n", school_size))
-    cat(sprintf("Isolation delay: %d days\n", isolation_delay))
-    cat(sprintf("Contact tracking window: %d days\n\n", isolation_delay))
+    if (!no_intervention) {
+      cat(sprintf("Index case isolation delay (after rash): %d days\n", isolation_delay_index))
+      cat(sprintf("Secondary case isolation delay (after prodromal): %d days\n", isolation_delay_secondary))
+      cat(sprintf("Quarantine contacts: %s\n", ifelse(quarantine_contacts, "Yes", "No")))
+      cat(sprintf("Quarantine efficacy: %.0f%%\n", quarantine_efficacy * 100))
+    }
+    cat("\n")
   }
   
   all_daily_counts <- list()
@@ -727,10 +834,12 @@ run_multiple_simulations <- function(n_simulations, school_size, avg_class_size,
                 100 * median(summary_stats$attack_rate),
                 100 * quantile(summary_stats$attack_rate, 0.025),
                 100 * quantile(summary_stats$attack_rate, 0.975)))
-    cat(sprintf("Total Quarantined: %.1f (95%% CI: %.1f - %.1f)\n",
-                median(summary_stats$total_quarantined),
-                quantile(summary_stats$total_quarantined, 0.025),
-                quantile(summary_stats$total_quarantined, 0.975)))
+    if (!no_intervention) {
+      cat(sprintf("Total Quarantined: %.1f (95%% CI: %.1f - %.1f)\n",
+                  median(summary_stats$total_quarantined),
+                  quantile(summary_stats$total_quarantined, 0.025),
+                  quantile(summary_stats$total_quarantined, 0.975)))
+    }
   }
   
   results <- list(
@@ -740,7 +849,8 @@ run_multiple_simulations <- function(n_simulations, school_size, avg_class_size,
     school_size = school_size,
     n_simulations = n_simulations,
     n_days = n_days,
-    computation_time = total_time
+    computation_time = total_time,
+    no_intervention = no_intervention
   )
   
   return(results)
