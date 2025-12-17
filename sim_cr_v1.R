@@ -1,35 +1,18 @@
-# ==============================================================================
-# MEASLES TRANSMISSION MODEL WITH IMPROVED QUARANTINE (Contact History)
-# ==============================================================================
-# Updated:
-#
-# Added no_intervention option for baseline scenario simulation
-# Fixed: Corrected P->Ra time_in_state reset for no_intervention scenario
-# Update: Separate isolation delays for index case (after rash) and 
-#              secondary cases (after prodromal onset)
-# Fixed: Quarantine efficacy now applied per unique contact person (not per
-#           contact event), preventing inflated effective quarantine rates
-# Fixed: Iso -> R transition now based on remaining infectious period,
-#           not a fixed additional period. Added time_since_prodromal tracking.
-# ==============================================================================
+####################
+# MEASLES TRANSMISSION MODEL
+####################
 
 library(Rcpp)
 library(dplyr)
 library(ggplot2)
 library(tidyr)
 
-# ==============================================================================
-# C++ CODE FOR CRITICAL BOTTLENECKS
-# ==============================================================================
-
 sourceCpp(code = '
 #include <Rcpp.h>
 #include <set>
 using namespace Rcpp;
 
-// -----------------------------
-// Contact-based transmission WITH CONTACT RECORDING
-// -----------------------------
+// Contact-based transmission with contact recording
 
 // [[Rcpp::export]]
 List cpp_school_transmission_contacts(
@@ -53,7 +36,7 @@ List cpp_school_transmission_contacts(
   IntegerVector new_exposures;
   IntegerVector breakthrough_cases;
   
-  // NEW: Track ALL contacts (for quarantine purposes)
+  // Track ALL contacts (for quarantine purposes)
   IntegerVector contact_infector_ids;
   IntegerVector contact_target_ids;
   
@@ -182,10 +165,7 @@ List cpp_school_transmission_contacts(
 }
 
 
-// -----------------------------
-// IMPROVED QUARANTINE: Uses contact history
-// FIX V2.3: Apply efficacy per UNIQUE contact, not per contact event
-// -----------------------------
+// QUARANTINE: Uses contact history
 
 // [[Rcpp::export]]
 List cpp_apply_quarantine_with_history(
@@ -278,10 +258,9 @@ List cpp_apply_quarantine_with_history(
 ')
 
 
-# ==============================================================================
+##############################
 # R WRAPPER FUNCTIONS
-# ==============================================================================
-
+##############################
 school_transmission <- function(population, params, contact_history) {
   result <- cpp_school_transmission_contacts(
     student_id      = population$student_id,
@@ -370,10 +349,9 @@ apply_quarantine <- function(population, params, contact_history) {
 }
 
 
-# ==============================================================================
-# CONTACT HISTORY MANAGER (R6 class for cleaner state management)
-# ==============================================================================
-
+#########################
+# CONTACT HISTORY MANAGER
+#########################
 ContactHistory <- R6::R6Class("ContactHistory",
                               public = list(
                                 window_size = NULL,
@@ -419,10 +397,7 @@ ContactHistory <- R6::R6Class("ContactHistory",
 )
 
 
-# ==============================================================================
-# STANDARD R FUNCTIONS
-# ==============================================================================
-
+################################
 create_school_population <- function(school_size, avg_class_size, age_range) {
   n_classes <- ceiling(school_size / avg_class_size)
   
@@ -531,9 +506,9 @@ update_disease_states <- function(population, params) {
     }
   }
   
-  # ==========================================================================
+  ####################
   # NO INTERVENTION SCENARIO: Direct Ra -> R after natural rash period
-  # ==========================================================================
+  #####################
   if (params$no_intervention) {
     # Natural recovery: Ra -> R after rash_period days (no isolation)
     ra_natural_recovery <- which(population$state == "Ra" &
@@ -556,9 +531,9 @@ update_disease_states <- function(population, params) {
     }
     
   } else {
-    # ==========================================================================
+    #################
     # STANDARD INTERVENTION SCENARIO: Isolation rules with separate delays
-    # ==========================================================================
+    ##################
     
     ## Isolation rules
     # 1) INDEX CASE: isolate after rash onset + isolation_delay_index
@@ -854,4 +829,5 @@ run_multiple_simulations <- function(n_simulations, school_size, avg_class_size,
   )
   
   return(results)
+
 }
