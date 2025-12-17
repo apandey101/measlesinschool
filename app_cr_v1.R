@@ -1,17 +1,7 @@
-# ==============================================================================
-# MEASLES TRANSMISSION MODEL - SHINY APP (V2.2)
-# ==============================================================================
-# 
+# MEASLES TRANSMISSION MODEL - SHINY APP
 # Interactive web application for exploring measles transmission dynamics
 # in school settings with class-based mixing
-#
-# Update: Comparison of WITH vs WITHOUT intervention scenarios
-# Update: UI improvements, plotly graphs, recalibrated parameters
-# Update: Separate isolation delays for index case (after rash) and 
-#              secondary cases (after prodromal onset)
-#
 # Updated on 12/11/2025
-# ==============================================================================
 
 library(shiny)
 library(ggplot2)
@@ -21,11 +11,9 @@ library(shinycssloaders)
 library(plotly)
 library(readxl)
 library(shinyBS)
-source("sim_cr_v1.R")  # V2.3: Fixed quarantine efficacy per unique contact
+source("sim_cr_v1.R")  
 
-# ==============================================================================
 # LOAD SCHOOL DATA
-# ==============================================================================
 school_data_raw <- read_xlsx("SC_vaccination_2025_2026.xlsx")
 school_data <- school_data_raw %>%
   filter(
@@ -47,9 +35,7 @@ if (nrow(school_data) == 0) {
 
 FIXED_CLASS_SIZE <- 25
 
-# ==============================================================================
 # UI (User Interface)
-# ==============================================================================
 
 ui <- fluidPage(
   
@@ -221,9 +207,9 @@ ui <- fluidPage(
       tabsetPanel(
         type = "tabs",
         
-        # =======================
+        
         # Tab 1: Main Results
-        # =======================
+        
         tabPanel(
           "📊 Main Results",
           br(),
@@ -355,9 +341,8 @@ ui <- fluidPage(
           )
         ),
         
-        # =======================
         # Tab 2: Intervention Comparison
-        # =======================
+        
         tabPanel(
           "📈 Intervention Comparison",
           br(),
@@ -498,9 +483,9 @@ ui <- fluidPage(
         
         
         
-        # =======================
+        
         # Tab 3: Infectious States
-        # =======================
+        
         
         tabPanel(
           "🦠 Infectious States",
@@ -523,9 +508,9 @@ ui <- fluidPage(
         ),
         
         
-        # =======================
+        
         # Tab 4: About
-        # =======================
+        
         tabPanel(
           "ℹ️ About",
           br(),
@@ -631,9 +616,7 @@ ui <- fluidPage(
 )
 
 
-# ==============================================================================
 # SERVER
-# ==============================================================================
 
 server <- function(input, output, session) {
   
@@ -760,10 +743,8 @@ server <- function(input, output, session) {
     showNotification("Both simulations complete!", type = "message", duration = 3)
   })
   
-  # ===========================================================================
-  # TAB 1: Main Results (Intervention Only)
-  # ===========================================================================
-  
+    # TAB 1: Main Results (Intervention Only)
+    
   # Summary stats for first tab (intervention only)
   output$attack_rate_text <- renderText({
     if (is.null(results_intervention())) return("—")
@@ -823,9 +804,9 @@ server <- function(input, output, session) {
       )
   })
   
-  # ===========================================================================
+  
   # TAB 2: Intervention Comparison (With vs Without)
-  # ===========================================================================
+  
   
   # Summary stats - Intervention
   output$outbreak_size_text_intervention <- renderText({
@@ -934,9 +915,9 @@ server <- function(input, output, session) {
       )
   })
   
-  # ===========================================================================
+  
   # TAB 3: Infectious States (Active at School)
-  # ===========================================================================
+  
   
   # Infectious states plot (P + Ra only - active at school)
   output$infectious_plot <- renderPlotly({
@@ -990,9 +971,9 @@ server <- function(input, output, session) {
       )
   })
   
-  # ===========================================================================
+  
   # Download Handler
-  # ===========================================================================
+  
   
   output$download_data <- downloadHandler(
     filename = function() paste("measles_simulation_", Sys.Date(), ".csv", sep = ""),
@@ -1005,8 +986,7 @@ server <- function(input, output, session) {
   )
 }
 
-# ==============================================================================
 # RUN APP
-# ==============================================================================
+
 
 shinyApp(ui = ui, server = server)
